@@ -1,0 +1,153 @@
+---
+title: "Iris Dataset - Tidying, Correlation, and ggplot2 Visualization"
+author: "WarriWes"
+date: "March 25, 2018"
+output: 
+     prettydoc::html_pretty:
+        theme: "architect"
+        highlight: "github"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+####A classic dataset just dying to be classified and visualized. I can't start a data analysis portfolio without including a quick demo for some data viz with Fisher's flowers.  
+Credit to DataCamp for visualization ideas and educational resources.  
+Data from: https://archive.ics.uci.edu/ml/datasets/Iris
+  
+>  Attribute Information:  
+    1. sepal length in cm  
+    2. sepal width in cm  
+    3. petal length in cm  
+    4. petal width in cm  
+    5. class:  
+       -- Iris Setosa  
+       -- Iris Versicolour  
+       -- Iris Virginica
+
+
+
+```{r message=FALSE}
+library(tidyverse)
+  
+#Read in iris dataset (header not included)
+iris <- read_csv('iris.data.csv', col_names=FALSE)
+iris
+```
+  
+```{r}
+#Assign new column names to 'cols' and apply them to the tibble
+cols <- c('Sepal_Length', 'Sepal_Width', 'Petal_Length', 'Petal_Width', 'Class')
+names(iris) <- cols
+iris$Class <- str_replace(iris$Class, 'Iris-', '')
+  
+#Check it out
+str(iris)
+```
+  
+```{r}
+#Generate a quick linear regression of sepal length vs. width grouped (colored) by class
+sepdims_lm <- iris %>% 
+  ggplot(aes(x = Sepal_Length, y = Sepal_Width, col = Class)) +
+        geom_smooth(method = "lm", se = F) +
+        geom_jitter() +
+        coord_equal()
+  
+  
+#Custom theme, and display the plot
+iris_theme <- theme(
+        plot.background = element_rect(fill = 'lavender', color = 'black', size = 3), 
+        panel.background = element_blank(), 
+        legend.key = element_blank(), 
+        legend.background = element_blank(), 
+        strip.background = element_blank(),
+        axis.title.x = element_text(face = 'bold', size = 12),
+        axis.title.y = element_text(face = 'bold', size = 12),
+        axis.text.x = element_text(face = 'bold', size = 11),
+        axis.text.y = element_text(face = 'bold', size = 11),
+        legend.title = element_text(face = 'bold', size = 12),
+        legend.text = element_text(face = 'bold', size = 11)
+        )
+  
+sepdims_lm + iris_theme
+```
+  
+  
+###Tidyr cleanup and visualization
+  
+**Tidy up the dataset by making every row an observation and every column a variable**
+```{r}
+iris_tidy <- iris %>%
+  gather(key, Value, -Class) %>%
+  separate(key, c("Part", "Measure"), "_")
+iris_tidy
+```
+  
+**One way to visualize the rearranged data, making the relationships between measure, class, and part a little more clear**
+```{r}
+iris_facet <- iris_tidy %>% ggplot(aes(x = Class, y = Value, col = Part)) +
+  geom_jitter() +
+  facet_grid(. ~ Measure)
+#Using the black & white theme. Simple, and just a little cleaner looking on this page
+iris_facet + theme_bw()
+```
+  
+  
+------
+  
+**Next we'll look at the correlation between the various iris parts and corresponding measures, based on what class (setosa, versicolor, or virginica) the plants happen to be.**
+  
+  
+**First let's prepare a function to reshape our iris data and create variables for the correlation of every measurement against every other measurement. Passing our iris tibble to this function we'll end up with 48 rows (3 classes x (4 measurements)²) containing the correlation coefficients for every measurement pair.**
+  
+```{r message=FALSE}  
+library(reshape2)
+cor_list <- function(x) {
+  U <- L <- cor(x)
+  
+  L[lower.tri(L, diag = TRUE)] <- NA
+  L <- melt(L)
+  names(L)[3] <- "points"
+  
+  U[upper.tri(U, diag = TRUE)] <- NA
+  U <- melt(U)
+  names(U)[3] <- "labels"
+  
+  merge(L, U)
+}
+
+#Pass the iris data, grouped by class, to our cor_list function to calculate correlations.
+iris_cor <- iris %>%
+  group_by(Class) %>%
+  do(cor_list(.[1:4])) 
+```
+  
+**Preparing a slightly modified theme for this facetted plot**
+```{r}
+iris_facet_theme <- theme(
+        axis.text.y = element_text(face = 'bold', angle = 45, hjust = 1),
+        axis.text.x = element_text(face = 'bold', angle = 45, hjust = 1),
+        strip.background = element_blank(),
+        legend.background = element_blank(),
+        plot.background = element_rect(fill = 'lavender', color = 'black', size = 3)
+        )
+```
+  
+**Visualization of correlations between measurements, grouped by class**
+```{r warning=FALSE}
+cor_facet <- ggplot(iris_cor, aes(x = Var1, y = Var2)) +
+  geom_point(aes(col = points, size = abs(points)), shape = 16) +
+  geom_text(aes(col = labels,  size = abs(labels), label = round(labels, 2))) +
+        ggtitle('Measure Correlation') +
+  scale_size(range = c(0, 6)) +
+  scale_color_gradient2(low='mediumorchid1', high='mediumorchid4') +
+  scale_y_discrete('', limits = rev(levels(iris_cor$Var1))) +
+  scale_x_discrete('') +
+  guides(size = FALSE) +
+  geom_abline(slope = -1, intercept = nlevels(iris_cor$Var1) + 1) +
+  coord_fixed() +
+  facet_grid(~Class)
+  
+cor_facet + iris_facet_theme
+```
